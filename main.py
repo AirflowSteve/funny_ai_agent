@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 
 from dotenv import load_dotenv
 from google import genai
@@ -7,6 +8,7 @@ from google.genai import types
 
 from call_function import available_functions, call_function
 from prompts import system_prompt
+from config import MAX_ITER
 
 
 def generate_content(client, messages, verbose):
@@ -20,13 +22,16 @@ def generate_content(client, messages, verbose):
     if not response.usage_metadata:
         raise RuntimeError("Gemini API response appears to be malformed")
     
+    if response.candidates:
+        for candidate in response.candidates:
+            messages.append(candidate.content)
+    
     if not response.function_calls:
         if verbose:
             print("Prompt tokens:", response.usage_metadata.prompt_token_count)
             print("Response tokens:", response.usage_metadata.candidates_token_count)
-        print("Response:")
-        print(response.text)
-        return
+ 
+        return response.text
 
     function_results_list = []
     for function_call in response.function_calls:
@@ -40,8 +45,9 @@ def generate_content(client, messages, verbose):
         if verbose:
             print(f"-> {result.parts[0].function_response.response}")
         function_results_list.append(result.parts[0])
+    messages.append(types.Content(role="user", parts=function_results_list))
 
-        
+
 
 def main():
     parser = argparse.ArgumentParser(description="AI Code Assistant")
@@ -60,8 +66,15 @@ def main():
     if args.verbose:
         print(f"User prompt: {args.user_prompt}\n")
     
-    for it in range(20):
-        generate_content(client, messages, args.verbose)
+    for _ in range(MAX_ITER):
+        final_response = generate_content(client, messages, args.verbose)
+        if final_response:
+            print("Final Response:")
+            print(final_response)
+            return
+    
+    print(f"Maximum iterations ({MAX_ITER}) reached")
+    sys.exit(1)
 
 
 
