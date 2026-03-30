@@ -9,6 +9,40 @@ from call_function import available_functions, call_function
 from prompts import system_prompt
 
 
+def generate_content(client, messages, verbose):
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=messages,
+        config=types.GenerateContentConfig(
+            tools=[available_functions], system_instruction=system_prompt
+        ),
+    )
+    if not response.usage_metadata:
+        raise RuntimeError("Gemini API response appears to be malformed")
+    
+    if not response.function_calls:
+        if verbose:
+            print("Prompt tokens:", response.usage_metadata.prompt_token_count)
+            print("Response tokens:", response.usage_metadata.candidates_token_count)
+        print("Response:")
+        print(response.text)
+        return
+
+    function_results_list = []
+    for function_call in response.function_calls:
+        result = call_function(function_call, verbose)
+        if not result.parts:
+            raise Exception('Error: ".parts" list is empty')
+        if result.parts[0] is None:
+            raise Exception('Error: "function response" is None')
+        if result.parts[0].from_function_response is None:
+            raise Exception("Error: the function result is None")
+        if verbose:
+            print(f"-> {result.parts[0].function_response.response}")
+        function_results_list.append(result.parts[0])
+
+        
+
 def main():
     parser = argparse.ArgumentParser(description="AI Code Assistant")
     parser.add_argument("user_prompt", type=str, help="Prompt to send to Gemini")
@@ -26,44 +60,15 @@ def main():
     if args.verbose:
         print(f"User prompt: {args.user_prompt}\n")
     
-    generate_content(client, messages, args.verbose)
+    for it in range(20):
+        generate_content(client, messages, args.verbose)
 
 
-def generate_content(client, messages, verbose):
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=messages,
-        config=types.GenerateContentConfig(
-            tools=[available_functions], system_instruction=system_prompt
-        ),
-    )
-    if not response.usage_metadata:
-        raise RuntimeError("Gemini API response appears to be malformed")
-
-    
-
-    if not response.function_calls:
-        if verbose:
-            print("Prompt tokens:", response.usage_metadata.prompt_token_count)
-            print("Response tokens:", response.usage_metadata.candidates_token_count)
-        print("Response:")
-        print(response.text)
-        return
 
 
     
-    function_results_list = []
-    for function_call in response.function_calls:
-        result = call_function(function_call, verbose)
-        if not result.parts:
-            raise Exception('Error: ".parts" list is empty')
-        if result.parts[0] is None:
-            raise Exception('Error: "function response" is None')
-        if result.parts[0].from_function_response is None:
-            raise Exception("Error: the function result is None")
-        if verbose:
-            print(f"-> {result.parts[0].function_response.response}")
-        function_results_list.append(result.parts[0])
+
+    
 
 
 if __name__ == "__main__":
